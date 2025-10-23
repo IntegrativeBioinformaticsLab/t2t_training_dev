@@ -6,12 +6,16 @@ A web-based application for annotating biological text with entity relationships
 
 - **Email-based user identification** with validation
 - **DOI validation and metadata fetching** from CrossRef API
+- **PDF viewer with text selection** - automatically fetch and display PDFs from DOI
+- **Copy text from PDF to annotation** - select text in PDF and copy to sentence field
 - **Entity and relationship annotation** with customizable types
 - **Multi-user concurrency protection** with tuple ownership tracking
 - **User-based deletion protection** - only creators and admins can delete tuples
 - **Efficient DOI storage** using reversible base64 hashing
 
-## Setup
+## Quick Start
+
+### Development Mode
 
 1. Install dependencies:
 ```bash
@@ -30,21 +34,28 @@ This will safely update your database schema while preserving existing data.
 ```
 T2T_ADMIN_EMAILS=admin1@example.com,admin2@example.com
 T2T_DB=t2t.db
-T2T_PORT=5001
+T2T_BACKEND_PORT=5001
+T2T_FRONTEND_PORT=8050
 T2T_HOST=0.0.0.0
 ```
 
-4. Run the backend:
+4. Run the unified application:
 ```bash
-python3 t2t_training_be.py
+python3 app.py
 ```
 
-5. Run the frontend (in a separate terminal):
-```bash
-python3 t2t_training_fe.py
-```
+This single command starts both the backend API and frontend application.
 
-6. Access the application at `http://localhost:8050`
+5. Access the application at `http://localhost:8050`
+
+### Production Deployment
+
+For production deployment with nginx reverse proxy, see **[DEPLOYMENT.md](DEPLOYMENT.md)** for detailed instructions including:
+- systemd service configuration
+- nginx reverse proxy setup
+- SSL certificate configuration
+- Performance tuning
+- Monitoring and maintenance
 
 ## Admin Configuration
 
@@ -62,8 +73,51 @@ Admin users can delete any tuple, while regular users can only delete their own.
 ## Usage
 
 1. Enter your email address (required for attribution)
-2. Optionally enter and validate a DOI to fetch article metadata
-3. Enter the sentence to annotate
+2. Enter and validate a DOI to:
+   - Fetch article metadata (title, authors, year)
+   - Automatically load the PDF in the right panel (if available)
+3. In the PDF viewer:
+   - Select text from the PDF document
+   - Click "Copy selected text to sentence" button
+   - The selected text will be added to the sentence field
 4. Add tuples defining relationships between entities
 5. Save your annotations
 6. Browse saved annotations in the Browse tab
+
+## PDF Sources
+
+The application finds PDF URLs from:
+1. **Unpaywall.org** - Open access PDFs (primary source)
+2. **CrossRef** - Publisher links when available (fallback)
+
+The PDF is loaded directly in your browser from the publisher's server, not proxied through the application. This ensures better performance and reduces server load.
+
+**Note:** Only open access and freely available PDFs can be displayed. Paywalled content will show an appropriate message.
+
+## Database Schema
+
+The application uses an efficient schema that avoids redundant data:
+
+### Key Tables
+
+- **`sentences`**: Stores sentence text, literature link, and DOI hash
+- **`doi_metadata`**: Stores only DOI (article metadata fetched from CrossRef API when needed)
+- **`tuples`**: Stores entity relationships with contributor email
+- **`entity_types`** and **`relation_types`**: Configurable entity and relation taxonomies
+
+### Design Principles
+
+1. **No Redundant Article Metadata**: Title, authors, and year are fetched from CrossRef API during export rather than stored in the database
+2. **Single Contributor Tracking**: Contributor email is stored only in the `tuples` table (not duplicated in `sentences`)
+3. **Efficient DOI Storage**: DOIs are hashed using base64 encoding for compact storage and fast lookups
+4. **On-Demand Metadata**: Article metadata is cached during export operations to minimize API calls
+
+### Migration
+
+If you have an existing database with the old schema, run the migration script:
+
+```bash
+python3 migrate_schema_cleanup.py
+```
+
+This will safely remove redundant fields while preserving all your data.
