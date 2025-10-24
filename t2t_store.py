@@ -3,7 +3,7 @@
 
 import os
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 import hashlib
 import base64
@@ -160,6 +160,65 @@ def init_db(db_path: str) -> None:
         );
     """)
 
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS admin_users (
+            id TEXT PRIMARY KEY,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            display_name TEXT,
+            is_active INTEGER DEFAULT 1,
+            created_at TEXT NOT NULL,
+            last_login_at TEXT
+        );
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS admin_sessions (
+            id TEXT PRIMARY KEY,
+            admin_id TEXT NOT NULL,
+            session_token TEXT UNIQUE NOT NULL,
+            expires_at TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            ip_address TEXT,
+            user_agent TEXT,
+            FOREIGN KEY(admin_id) REFERENCES admin_users(id) ON DELETE CASCADE
+        );
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS projects (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT,
+            created_by TEXT,
+            created_at TEXT NOT NULL
+        );
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS project_papers (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            doi TEXT NOT NULL,
+            doi_hash TEXT NOT NULL,
+            title TEXT,
+            authors TEXT,
+            year TEXT,
+            pdf_path TEXT,
+            pdf_status TEXT DEFAULT 'pending',
+            pdf_error TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+        );
+    """)
+
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_admin_sessions_token ON admin_sessions(session_token);")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_admin_sessions_expires ON admin_sessions(expires_at);")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_admin_sessions_admin_id ON admin_sessions(admin_id);")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_admin_users_email ON admin_users(email);")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_project_papers_project_id ON project_papers(project_id);")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_project_papers_doi_hash ON project_papers(doi_hash);")
+
     for name, value in SCHEMA_JSON["span-attribute"].items():
         cur.execute("INSERT OR IGNORE INTO entity_types(name, value) VALUES (?, ?);", (name, value))
 
@@ -189,7 +248,7 @@ def upsert_doi_metadata(db_path: str, doi: str, title: str = None,
                         authors: str = None, year: str = None) -> str:
     """Store DOI (only) and return the doi_hash. Title, authors, year are ignored (fetched from DOI when needed)."""
     conn = get_conn(db_path); cur = conn.cursor()
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
 
     doi_hash = generate_doi_hash(doi)
     cur.execute("""INSERT OR REPLACE INTO doi_metadata(doi_hash, doi, created_at)
@@ -201,7 +260,7 @@ def upsert_doi_metadata(db_path: str, doi: str, title: str = None,
 def upsert_sentence(db_path: str, sid, text: str, link: str, email: str = None,
                     doi_hash: str = None) -> int:
     conn = get_conn(db_path); cur = conn.cursor()
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
 
     if sid is None or str(sid).strip() == "":
         cur.execute("""INSERT INTO sentences(text, literature_link, doi_hash, created_at)
@@ -239,7 +298,7 @@ def upsert_sentence(db_path: str, sid, text: str, link: str, email: str = None,
 
 def insert_tuple_rows(db_path: str, sentence_id: int, rows: list[dict], contributor_email: str) -> None:
     conn = get_conn(db_path); cur = conn.cursor()
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     q = """INSERT INTO tuples(
         sentence_id, source_entity_name, source_entity_attr,
         relation_type, sink_entity_name, sink_entity_attr, contributor_email, created_at
