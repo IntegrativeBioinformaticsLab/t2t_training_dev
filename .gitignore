@@ -1,0 +1,12 @@
+.github/
+node_modules/
+.env
+__pycache__/
+*.pyc
+*.pyo
+*.db
+*.db-journal
+project_pdfs/
+.cache/
+*_original.py
+*_old_backup.py
